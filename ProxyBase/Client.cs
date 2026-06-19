@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace ProxyBase
 {
@@ -18,28 +19,24 @@ namespace ProxyBase
 
         public ClientTab Tab { get; private set; }
 
-        public Thread ClientLoopThread { get; private set; }
-
         public Socket ClientSocket { get; private set; }
         public Socket ServerSocket { get; private set; }
 
-        private bool clientReceiving = false;
-        private bool serverReceiving = false;
-
-        private byte[] clientBuffer = new byte[65535];
-        private byte[] serverBuffer = new byte[65535];
-
-        private List<byte> fullClientBuffer = new List<byte>();
-        private List<byte> fullServerBuffer = new List<byte>();
+        private readonly NetworkStream clientStream;
+        private readonly NetworkStream serverStream;
 
         private byte clientOrdinal = 0x00;
         private byte serverOrdinal = 0x00;
 
-        private Queue<ServerPacket> clientSendQueue = new Queue<ServerPacket>();
-        private Queue<ClientPacket> serverSendQueue = new Queue<ClientPacket>();
+        // Outbound queues. Kept so manual injection from ClientTab (Enqueue) still
+        // works, and so each socket has a single writer (no concurrent-send races).
+        private readonly Queue<ServerPacket> clientSendQueue = new Queue<ServerPacket>(); // -> game client
+        private readonly Queue<ClientPacket> serverSendQueue = new Queue<ClientPacket>();  // -> real server
+        private readonly SemaphoreSlim clientSendSignal = new SemaphoreSlim(0);
+        private readonly SemaphoreSlim serverSendSignal = new SemaphoreSlim(0);
 
-        private Queue<ClientPacket> clientProcessQueue = new Queue<ClientPacket>();
-        private Queue<ServerPacket> serverProcessQueue = new Queue<ServerPacket>();
+        private readonly CancellationTokenSource cts = new CancellationTokenSource();
+        private bool disconnected;
 
         public Client(Server server, Socket socket, EndPoint endPoint)
         {
@@ -52,297 +49,209 @@ namespace ProxyBase
             this.Key = Encoding.ASCII.GetBytes("UrkcnItnI");
             this.KeyTable = new byte[1024];
 
-            this.ClientLoopThread = new Thread(new ThreadStart(ClientLoop));
-            this.ClientLoopThread.IsBackground = true;
-            this.ClientLoopThread.Start();
-        }
+            this.clientStream = new NetworkStream(ClientSocket);
+            this.serverStream = new NetworkStream(ServerSocket);
 
-        public void ClientLoop()
-        {
             Connected = true;
 
-            while (Connected)
-            {
-                lock (Program.SyncObj)
-                {
-                    try
-                    {
-                        ClientReceive();
-                        ClientProcess();
-                        ClientDequeue();
-
-                        ServerReceive();
-                        ServerProcess();
-                        ServerDequeue();
-                    }
-                    catch (Exception ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine(ex);
-                        Connected = false;
-                    }
-                }
-
-                Thread.Sleep(1);
-            }
-
-            lock (Program.SyncObj)
-            {
-                if (ClientSocket.Connected)
-                    ClientSocket.Close();
-
-                if (ServerSocket.Connected)
-                    ServerSocket.Close();
-
-                Server.Clients.Remove(this);
-                Server.Form.RemoveTab(Tab);
-            }
+            // Two receive pumps and two send pumps, all async (no busy-wait, no per-client thread).
+            Task.Run(() => ReceiveLoopAsync(true, cts.Token));   // from game client -> server
+            Task.Run(() => ReceiveLoopAsync(false, cts.Token));  // from real server -> client
+            Task.Run(() => SendToServerLoopAsync(cts.Token));
+            Task.Run(() => SendToClientLoopAsync(cts.Token));
         }
 
-        #region Networking
-        public void ClientReceive()
-        {
-            if (Connected && !clientReceiving)
-            {
-                clientReceiving = true;
-                ClientSocket.BeginReceive(clientBuffer, 0, clientBuffer.Length, SocketFlags.None, ClientEndReceive, this);
-            }
-        }
-        public void ServerReceive()
-        {
-            if (Connected && !serverReceiving)
-            {
-                serverReceiving = true;
-                ServerSocket.BeginReceive(serverBuffer, 0, serverBuffer.Length, SocketFlags.None, ServerEndReceive, this);
-            }
-        }
-
-        public void ClientProcess()
-        {
-            lock (Program.SyncObj)
-            {
-                while (clientProcessQueue.Count > 0)
-                {
-                    var msg = clientProcessQueue.Dequeue();
-                    if (Server.ClientMessageHandlers[msg.Opcode].Invoke(this, msg))
-                    {
-                        Enqueue(msg);
-                        Tab.LogOutgoingPacket("Send> {0}", msg);
-                    }
-                }
-            }
-        }
-        public void ServerProcess()
-        {
-            lock (Program.SyncObj)
-            {
-                while (serverProcessQueue.Count > 0)
-                {
-                    var msg = serverProcessQueue.Dequeue();
-                    if (Server.ServerMessageHandlers[msg.Opcode].Invoke(this, msg))
-                    {
-                        Enqueue(msg);
-                        Tab.LogIncomingPacket("Recv> {0}", msg);
-                    }
-                }
-            }
-        }
-
-        public void ClientDequeue()
-        {
-            lock (Program.SyncObj)
-            {
-                while (clientSendQueue.Count > 0)
-                {
-                    var msg = clientSendQueue.Dequeue();
-
-                    if (msg.ShouldEncrypt)
-                    {
-                        msg.Ordinal = clientOrdinal++;
-                        msg.Encrypt(this);
-                    }
-
-                    msg.Length = (ushort)(msg.BodyData.Length + (msg.Header.Length - 3));
-                    var buffer = new byte[msg.Header.Length + msg.BodyData.Length];
-                    Array.Copy(msg.Header, 0, buffer, 0, msg.Header.Length);
-                    Array.Copy(msg.BodyData, 0, buffer, msg.Header.Length, msg.BodyData.Length);
-
-                    ClientSocket.BeginSend(buffer, 0, buffer.Length, SocketFlags.None, ClientEndSend, this);
-                }
-            }
-        }
-        public void ServerDequeue()
-        {
-            lock (Program.SyncObj)
-            {
-                while (serverSendQueue.Count > 0)
-                {
-                    var msg = serverSendQueue.Dequeue();
-
-                    if (msg.Opcode == 0x39 || msg.Opcode == 0x3A)
-                    {
-                        msg.EncryptDialog();
-                    }
-
-                    if (msg.ShouldEncrypt)
-                    {
-                        msg.Ordinal = serverOrdinal++;
-                        msg.Encrypt(this);
-                    }
-
-                    msg.Length = (ushort)(msg.BodyData.Length + (msg.Header.Length - 3));
-                    var buffer = new byte[msg.Header.Length + msg.BodyData.Length];
-                    Array.Copy(msg.Header, 0, buffer, 0, msg.Header.Length);
-                    Array.Copy(msg.BodyData, 0, buffer, msg.Header.Length, msg.BodyData.Length);
-
-                    ServerSocket.BeginSend(buffer, 0, buffer.Length, SocketFlags.None, ServerEndSend, this);
-                }
-            }
-        }
-
-        public void Enqueue(ClientPacket msg)
+        #region Enqueue (manual injection + forwarding)
+        public void Enqueue(ClientPacket msg) // destined for the real server
         {
             lock (Program.SyncObj)
             {
                 serverSendQueue.Enqueue(msg);
             }
+            serverSendSignal.Release();
         }
-        public void Enqueue(ServerPacket msg)
+        public void Enqueue(ServerPacket msg) // destined for the game client
         {
             lock (Program.SyncObj)
             {
                 clientSendQueue.Enqueue(msg);
             }
+            clientSendSignal.Release();
         }
+        #endregion
 
-        static void ClientEndSend(IAsyncResult ar)
+        #region Receive pumps
+        private async Task ReceiveLoopAsync(bool fromClient, CancellationToken token)
         {
-            var client = (Client)ar.AsyncState;
+            var stream = fromClient ? clientStream : serverStream;
+            var buffer = new byte[65535];
+            var accumulated = new List<byte>();
 
             try
             {
-                client.ClientSocket.EndSend(ar);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex);
-                client.Connected = false;
-            }
-        }
-        static void ServerEndSend(IAsyncResult ar)
-        {
-            var client = (Client)ar.AsyncState;
-
-            try
-            {
-                client.ServerSocket.EndSend(ar);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex);
-                client.Connected = false;
-            }
-        }
-
-        static void ClientEndReceive(IAsyncResult ar)
-        {
-            var client = (Client)ar.AsyncState;
-
-            try
-            {
-                var count = client.ClientSocket.EndReceive(ar);
-
-                for (int i = 0; i < count; i++)
-                    client.fullClientBuffer.Add(client.clientBuffer[i]);
-
-                if (count == 0 || client.fullClientBuffer[0] != 0xAA)
+                while (Connected && !token.IsCancellationRequested)
                 {
-                    client.Connected = false;
-                    return;
+                    int count = await stream.ReadAsync(buffer, 0, buffer.Length, token);
+                    if (count == 0)
+                        break; // peer closed the connection
+
+                    for (int i = 0; i < count; i++)
+                        accumulated.Add(buffer[i]);
+
+                    if (accumulated[0] != 0xAA)
+                        break; // not a valid Dark Ages stream
+
+                    while (accumulated.Count > 3)
+                    {
+                        var length = (accumulated[1] << 8) + accumulated[2] + 3;
+                        if (length > accumulated.Count)
+                            break; // wait for the rest of this packet
+
+                        var data = accumulated.GetRange(0, length).ToArray();
+                        accumulated.RemoveRange(0, length);
+
+                        ProcessReceived(data, fromClient);
+                    }
                 }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            finally
+            {
+                Disconnect();
+            }
+        }
 
-                while (client.fullClientBuffer.Count > 3)
+        // Decrypt -> handler -> enqueue for the opposite side. The global lock preserves
+        // the original serialization of all crypto state (key/seed/ordinals/RNG).
+        private void ProcessReceived(byte[] data, bool fromClient)
+        {
+            lock (Program.SyncObj)
+            {
+                if (fromClient)
                 {
-                    var length = ((client.fullClientBuffer[1] << 8) + client.fullClientBuffer[2] + 3);
-
-                    if (length > client.fullClientBuffer.Count)
-                        break;
-
-                    var data = client.fullClientBuffer.GetRange(0, length);
-                    client.fullClientBuffer.RemoveRange(0, length);
-
-                    var msg = new ClientPacket(data.ToArray());
+                    var msg = new ClientPacket(data);
 
                     if (msg.ShouldEncrypt)
-                    {
-                        msg.Decrypt(client);
-                    }
+                        msg.Decrypt(this);
 
                     if (msg.Opcode == 0x39 || msg.Opcode == 0x3A)
-                    {
                         msg.DecryptDialog();
-                    }
 
-                    lock (Program.SyncObj)
+                    if (Server.ClientMessageHandlers[msg.Opcode].Invoke(this, msg))
                     {
-                        client.clientProcessQueue.Enqueue(msg);
+                        serverSendQueue.Enqueue(msg);
+                        serverSendSignal.Release();
+                        Tab.LogOutgoingPacket("Send> {0}", msg);
                     }
                 }
-
-                client.clientReceiving = false;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex);
-                client.Connected = false;
-            }
-        }
-        static void ServerEndReceive(IAsyncResult ar)
-        {
-            var client = (Client)ar.AsyncState;
-
-            try
-            {
-                var count = client.ServerSocket.EndReceive(ar);
-
-                for (int i = 0; i < count; i++)
-                    client.fullServerBuffer.Add(client.serverBuffer[i]);
-
-                if (count == 0 || client.fullServerBuffer[0] != 0xAA)
+                else
                 {
-                    client.Connected = false;
-                    return;
-                }
-
-                while (client.fullServerBuffer.Count > 3)
-                {
-                    var length = ((client.fullServerBuffer[1] << 8) + client.fullServerBuffer[2] + 3);
-
-                    if (length > client.fullServerBuffer.Count)
-                        break;
-
-                    var data = client.fullServerBuffer.GetRange(0, length);
-                    client.fullServerBuffer.RemoveRange(0, length);
-
-                    var msg = new ServerPacket(data.ToArray());
+                    var msg = new ServerPacket(data);
 
                     if (msg.ShouldEncrypt)
-                    {
-                        msg.Decrypt(client);
-                    }
+                        msg.Decrypt(this);
 
-                    lock (Program.SyncObj)
+                    if (Server.ServerMessageHandlers[msg.Opcode].Invoke(this, msg))
                     {
-                        client.serverProcessQueue.Enqueue(msg);
+                        clientSendQueue.Enqueue(msg);
+                        clientSendSignal.Release();
+                        Tab.LogIncomingPacket("Recv> {0}", msg);
                     }
                 }
+            }
+        }
+        #endregion
 
-                client.serverReceiving = false;
+        #region Send pumps
+        private async Task SendToServerLoopAsync(CancellationToken token)
+        {
+            try
+            {
+                while (Connected && !token.IsCancellationRequested)
+                {
+                    await serverSendSignal.WaitAsync(token);
+
+                    byte[] buffer;
+                    lock (Program.SyncObj)
+                    {
+                        if (serverSendQueue.Count == 0)
+                            continue;
+
+                        var msg = serverSendQueue.Dequeue();
+
+                        if (msg.Opcode == 0x39 || msg.Opcode == 0x3A)
+                            msg.EncryptDialog();
+
+                        if (msg.ShouldEncrypt)
+                        {
+                            msg.Ordinal = serverOrdinal++;
+                            msg.Encrypt(this);
+                        }
+
+                        buffer = BuildBuffer(msg);
+                    }
+
+                    await serverStream.WriteAsync(buffer, 0, buffer.Length, token);
+                }
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine(ex);
-                client.Connected = false;
             }
+            finally
+            {
+                Disconnect();
+            }
+        }
+
+        private async Task SendToClientLoopAsync(CancellationToken token)
+        {
+            try
+            {
+                while (Connected && !token.IsCancellationRequested)
+                {
+                    await clientSendSignal.WaitAsync(token);
+
+                    byte[] buffer;
+                    lock (Program.SyncObj)
+                    {
+                        if (clientSendQueue.Count == 0)
+                            continue;
+
+                        var msg = clientSendQueue.Dequeue();
+
+                        if (msg.ShouldEncrypt)
+                        {
+                            msg.Ordinal = clientOrdinal++;
+                            msg.Encrypt(this);
+                        }
+
+                        buffer = BuildBuffer(msg);
+                    }
+
+                    await clientStream.WriteAsync(buffer, 0, buffer.Length, token);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            finally
+            {
+                Disconnect();
+            }
+        }
+
+        private static byte[] BuildBuffer(Packet msg)
+        {
+            msg.Length = (ushort)(msg.BodyData.Length + (msg.Header.Length - 3));
+            var buffer = new byte[msg.Header.Length + msg.BodyData.Length];
+            Array.Copy(msg.Header, 0, buffer, 0, msg.Header.Length);
+            Array.Copy(msg.BodyData, 0, buffer, msg.Header.Length, msg.BodyData.Length);
+            return buffer;
         }
         #endregion
 
@@ -356,6 +265,28 @@ namespace ProxyBase
             }
 
             return key;
+        }
+
+        private void Disconnect()
+        {
+            lock (Program.SyncObj)
+            {
+                if (disconnected)
+                    return;
+                disconnected = true;
+                Connected = false;
+            }
+
+            try { cts.Cancel(); } catch { }
+            try { if (ClientSocket.Connected) ClientSocket.Close(); } catch { }
+            try { if (ServerSocket.Connected) ServerSocket.Close(); } catch { }
+
+            lock (Program.SyncObj)
+            {
+                Server.Clients.Remove(this);
+            }
+
+            try { Server.Form.RemoveTab(Tab); } catch { }
         }
     }
 }

@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-using System.Threading;
+using System.Threading.Tasks;
 
 namespace ProxyBase
 {
@@ -20,7 +20,6 @@ namespace ProxyBase
         public ServerMessageHandler[] ServerMessageHandlers { get; private set; }
         public EndPoint RemoteEndPoint { get; private set; }
         public List<Client> Clients { get; set; }
-        public Thread ServerLoopThread { get; private set; }
 
         public Server(MainForm mainForm)
         {
@@ -49,28 +48,39 @@ namespace ProxyBase
 
             this.RemoteEndPoint = new IPEndPoint(IPAddress.Parse(Config.RemoteServerIp), Config.RemoteServerPort);
 
-            this.ServerLoopThread = new Thread(new ThreadStart(ServerLoop));
-            this.ServerLoopThread.IsBackground = true;
-            this.ServerLoopThread.Start();
+            Running = true;
+            Task.Run(() => AcceptLoopAsync());
         }
 
-        public void ServerLoop()
+        private async Task AcceptLoopAsync()
         {
-            Running = true;
-
             while (Running)
             {
-                if (Listener.Pending())
+                Socket socket;
+                try
                 {
-                    var socket = Listener.AcceptSocket();
+                    socket = await Listener.AcceptSocketAsync();
+                }
+                catch (ObjectDisposedException) { break; } // Stop() called the listener
+                catch (SocketException) { break; }
+
+                try
+                {
                     var client = new Client(this, socket, RemoteEndPoint);
 
-                    Clients.Add(client);
+                    lock (Program.SyncObj)
+                    {
+                        Clients.Add(client);
+                    }
 
                     RemoteEndPoint = new IPEndPoint(IPAddress.Parse(Config.RemoteServerIp), Config.RemoteServerPort);
                 }
-
-                Thread.Sleep(1);
+                catch (Exception ex)
+                {
+                    // Most likely the proxy couldn't connect out to the real server.
+                    System.Diagnostics.Debug.WriteLine(ex);
+                    try { socket.Close(); } catch { }
+                }
             }
         }
 
