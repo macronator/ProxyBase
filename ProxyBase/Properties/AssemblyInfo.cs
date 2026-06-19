@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
 [assembly: AssemblyTitle("ProxyBase")]
-[assembly: AssemblyDescription("Man-in-the-middle network proxy base for the Dark Ages client (4.21).")]
+[assembly: AssemblyDescription("Man-in-the-middle network proxy base for the Dark Ages client (7.41).")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("ProxyBase")]
 [assembly: AssemblyProduct("ProxyBase")]

@@ -5,7 +5,7 @@ namespace ProxyBase
     ///
     /// Edit these values to point the proxy at your own server and client.
     /// The memory-patch offsets below are specific to ONE Darkages.exe build
-    /// (this base was made for client 4.21) — a different client version will
+    /// (this base was made for client 7.41) — a different client version will
     /// require different offsets.
     /// </summary>
     public static class Config
