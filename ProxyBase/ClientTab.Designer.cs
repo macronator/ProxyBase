@@ -28,7 +28,6 @@
         /// </summary>
         private void InitializeComponent()
         {
-            System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(ClientTab));
             this.textConsoleOutput = new System.Windows.Forms.RichTextBox();
             this.panel1 = new System.Windows.Forms.Panel();
             this.textConsoleInput = new System.Windows.Forms.RichTextBox();
@@ -109,8 +108,6 @@
             // 
             this.checkRecv.CheckOnClick = true;
             this.checkRecv.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.checkRecv.Image = ((System.Drawing.Image)(resources.GetObject("checkRecv.Image")));
-            this.checkRecv.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.checkRecv.Name = "checkRecv";
             this.checkRecv.Size = new System.Drawing.Size(105, 22);
             this.checkRecv.Text = "Incoming Packets";
@@ -119,8 +116,6 @@
             // 
             this.checkSend.CheckOnClick = true;
             this.checkSend.DisplayStyle = System.Windows.Forms.ToolStripItemDisplayStyle.Text;
-            this.checkSend.Image = ((System.Drawing.Image)(resources.GetObject("checkSend.Image")));
-            this.checkSend.ImageTransparentColor = System.Drawing.Color.Magenta;
             this.checkSend.Name = "checkSend";
             this.checkSend.Size = new System.Drawing.Size(105, 22);
             this.checkSend.Text = "Outgoing Packets";

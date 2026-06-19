@@ -32,14 +32,18 @@ It is meant as a **starting point (a "base")** for building your own tools — p
 
 - Windows
 - .NET Framework 4.8 — built into Windows 10 (1903+) and Windows 11, so end users typically need no extra runtime install. Building requires the .NET Framework 4.8 targeting pack (bundled with current Visual Studio).
-- Visual Studio 2013 or newer with C# / .NET Framework desktop support
+- Visual Studio 2019 or newer (the project uses the modern SDK-style format), or the .NET SDK / MSBuild for command-line builds
 - A Dark Ages client installed (default path `C:\KRU\Dark Ages\Darkages.exe`)
 
 ## Building
 
-1. Open `ProxyBase.sln` in Visual Studio.
-2. Make sure the platform is **x86** — the project is x86-only because it patches a 32-bit client.
-3. Build (`Ctrl+Shift+B`). Output lands in `ProxyBase\bin\Debug\` (or `bin\Release\`).
+Open `ProxyBase.sln` in Visual Studio (2019+) and build (`Ctrl+Shift+B`), or from a terminal in the repo root:
+
+```
+dotnet build
+```
+
+The project targets .NET Framework 4.8 and is pinned to **x86** (it patches a 32-bit client), so there's no platform to select. Output lands in `ProxyBase\bin\Debug\net48\` (or `bin\Release\net48\`).
 
 ## Usage
 

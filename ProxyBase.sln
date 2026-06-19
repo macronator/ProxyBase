@@ -7,14 +7,14 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProxyBase", "ProxyBase\Prox
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
-		Debug|x86 = Debug|x86
-		Release|x86 = Release|x86
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Debug|x86.ActiveCfg = Debug|x86
-		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Debug|x86.Build.0 = Debug|x86
-		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Release|x86.ActiveCfg = Release|x86
-		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Release|x86.Build.0 = Release|x86
+		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{35562908-92A5-484F-A770-5FAFFE61ECFF}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
