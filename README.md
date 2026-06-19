@@ -1,6 +1,6 @@
 # ProxyBase
 
-A lightweight, extensible **man-in-the-middle network proxy** for the MMORPG **Dark Ages** (client **4.21**), written in C# (.NET Framework 4.8, WinForms). It sits between the game client and the game server, decrypts and logs the packet stream in real time, and lets you hook individual packet opcodes to inspect or modify traffic.
+A lightweight, extensible **man-in-the-middle network proxy** for the MMORPG **Dark Ages** (client **7.41**), written in C# (.NET Framework 4.8, WinForms). It sits between the game client and the game server, decrypts and logs the packet stream in real time, and lets you hook individual packet opcodes to inspect or modify traffic.
 
 It is meant as a **starting point (a "base")** for building your own tools — packet analyzers, automation, research utilities, and the like.
 
@@ -55,7 +55,7 @@ The project targets .NET Framework 4.8 and is pinned to **x86** (it patches a 32
 
 ## Configuration — this is version- and server-specific
 
-All tweakable settings live in one file: **`ProxyBase/Config.cs`**. This base was built against one specific client build (**4.21**) and one specific server, so to use it against your own setup you'll most likely need to change:
+All tweakable settings live in one file: **`ProxyBase/Config.cs`**. This base was built against one specific client build (**7.41**) and one specific server, so to use it against your own setup you'll most likely need to change:
 
 | Setting (`Config.cs`) | Default | Notes |
 |---|---|---|
