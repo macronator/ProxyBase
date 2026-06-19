@@ -88,6 +88,14 @@ Use the `Packet` reader/writer helpers (`ReadByte`, `ReadString8`, `ReadUInt32`,
 | `ProcessMemoryStream.cs` | A `Stream` over another process's memory (used for client patching). |
 | `Kernel32.cs` | Win32 P/Invoke declarations. |
 
+## Provenance & credits
+
+The original **ProxyBase** for Dark Ages was created by **Acht** (~2012). This repository is that community base — cleaned up and **ported to .NET Framework 4.8** by **macronator** (2026) and republished so others can build on it.
+
+macronator claims **no ownership** of the original work and shares it in good faith for educational use. If you are the original author (or hold rights to the original code) and would like different credit or removal, please open an issue.
+
 ## License
 
-[MIT](LICENSE) © 2026 macronator
+This project is released under the [MIT License](LICENSE).
+
+Original base © 2012 **Acht** · cleaned up, ported to .NET Framework 4.8, and republished by **macronator** (2026).
