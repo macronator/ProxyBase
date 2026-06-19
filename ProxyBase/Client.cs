@@ -53,6 +53,7 @@ namespace ProxyBase
             this.KeyTable = new byte[1024];
 
             this.ClientLoopThread = new Thread(new ThreadStart(ClientLoop));
+            this.ClientLoopThread.IsBackground = true;
             this.ClientLoopThread.Start();
         }
 

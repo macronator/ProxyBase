@@ -34,12 +34,15 @@ namespace ProxyBase
         }
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
-            System.Diagnostics.Process.GetCurrentProcess().Kill();
+            // Worker threads are background threads, so they end with the process.
+            // Just stop the listener so the port is released promptly.
+            if (Server != null)
+                Server.Stop();
         }
 
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            System.Diagnostics.Process.GetCurrentProcess().Kill();
+            Close();
         }
         private void launchDarkAgesToolStripMenuItem_Click(object sender, EventArgs e)
         {

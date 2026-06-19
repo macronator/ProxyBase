@@ -50,6 +50,7 @@ namespace ProxyBase
             this.RemoteEndPoint = new IPEndPoint(IPAddress.Parse(Config.RemoteServerIp), Config.RemoteServerPort);
 
             this.ServerLoopThread = new Thread(new ThreadStart(ServerLoop));
+            this.ServerLoopThread.IsBackground = true;
             this.ServerLoopThread.Start();
         }
 
@@ -71,6 +72,14 @@ namespace ProxyBase
 
                 Thread.Sleep(1);
             }
+        }
+
+        /// <summary>Stops accepting connections and releases the listen port.</summary>
+        public void Stop()
+        {
+            Running = false;
+            try { Listener.Stop(); }
+            catch (SocketException) { }
         }
 
         public bool ClientMessage_0x10_ClientJoin(Client client, ClientPacket msg)
