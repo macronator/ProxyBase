@@ -1,0 +1,21 @@
+# Auto-normalize line endings on commit
+* text=auto
+
+# Source and project files use CRLF for Windows / Visual Studio tooling
+*.cs       text eol=crlf
+*.csproj   text eol=crlf
+*.sln      text eol=crlf
+*.resx     text eol=crlf
+*.config   text eol=crlf
+*.settings text eol=crlf
+
+# Treat these as binary (never normalize or diff)
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.dll  binary
+*.exe  binary
+*.pdb  binary
+*.nlp  binary

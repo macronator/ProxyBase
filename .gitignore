@@ -1,0 +1,31 @@
+# Build results
+[Bb]in/
+[Oo]bj/
+
+# Visual Studio cache / user-specific files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build artifacts / logs
+*.tlog
+*.cache
+*.log
+*.tmp
+[Tt]emp/
+[Bb]uild/
+[Oo]ut/
+
+# Rider / ReSharper
+.idea/
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# OS cruft
+Thumbs.db
+desktop.ini
+.DS_Store
