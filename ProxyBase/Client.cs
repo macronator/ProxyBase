@@ -8,6 +8,14 @@ using System.Threading.Tasks;
 
 namespace ProxyBase
 {
+    // ===========================================================================
+    // WORK IN PROGRESS (async-relay branch) -- NOT merged to main.
+    // Async/await rewrite of the relay (replaces the original thread-per-client +
+    // Thread.Sleep(1) loop). It relays the full encrypted login handshake correctly,
+    // but the client does NOT reconnect after the server's 0x03 redirect (this works
+    // on main). The cause appears to be below the app layer (TCP FIN/RST or close
+    // timing). See ASYNC-RELAY-NOTES.md before continuing.
+    // ===========================================================================
     public class Client
     {
         public byte Seed { get; set; }
