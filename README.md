@@ -41,6 +41,14 @@ It is meant as a **starting point (a "base")** for building your own tools — p
 2. Make sure the platform is **x86** — the project is x86-only because it patches a 32-bit client.
 3. Build (`Ctrl+Shift+B`). Output lands in `ProxyBase\bin\Debug\` (or `bin\Release\`).
 
+## Usage
+
+1. Build and run `ProxyBase.exe`.
+2. **Options → Choose DA Path…** — type your `Darkages.exe` path or click **Browse** to locate it, then **OK**. Your choice is remembered across runs. (If it's unset, **Launch Dark Ages** opens this dialog the first time, pre-filled with the `Config.cs` default.)
+3. **File → Launch Dark Ages** — the proxy starts the client, patches it to connect through the proxy, and a tab opens showing the live packet stream.
+
+> **Note:** only one program can listen on the proxy port (`2610`) at a time. If another ProxyBase instance or a bot (e.g. Ascend) is already running, close it first — otherwise ProxyBase shows a "port in use" message and exits.
+
 ## Configuration — this is version- and server-specific
 
 All tweakable settings live in one file: **`ProxyBase/Config.cs`**. This base was built against one specific client build (**4.21**) and one specific server, so to use it against your own setup you'll most likely need to change:
@@ -49,7 +57,7 @@ All tweakable settings live in one file: **`ProxyBase/Config.cs`**. This base wa
 |---|---|---|
 | `RemoteServerIp` / `RemoteServerPort` | `52.88.55.94` / `2610` | The real game server the proxy connects out to. |
 | `LocalListenPort` | `2610` | Loopback port the proxy listens on and redirects the client to (kept in sync across the listener, the memory patch, and the redirect rewrite). |
-| `ClientPath` | `C:\KRU\Dark Ages\Darkages.exe` | Path to the client executable to launch and patch. |
+| `ClientPath` | `C:\KRU\Dark Ages\Darkages.exe` | Default client path. You can also set it at runtime via **Options → Choose DA Path…** (remembered across runs), which overrides this. |
 | `PatchForceJump`, `PatchConnectIp`, `PatchConnectPort`, `PatchSecondJump` | `0x004333A2` … | Client memory offsets that redirect it to localhost. **Specific to one `Darkages.exe` build** — a different client version needs different offsets. |
 
 ## Extending it — adding packet handlers

@@ -6,6 +6,10 @@ namespace ProxyBase
 {
     public abstract class Packet
     {
+        // Single shared RNG. Using `new Random()` per call seeds from the system clock,
+        // so rapid successive calls can produce identical "random" values.
+        protected static readonly Random rng = new Random();
+
         protected static byte[][] saltTable = new byte[][]
         {
             #region Seed 00
@@ -388,7 +392,7 @@ namespace ProxyBase
         {
             if (position + 7 < bodyData.Length)
             {
-                return (long)(bodyData[position++] << 56 | bodyData[position++] << 48 | bodyData[position++] << 40 | bodyData[position++] << 32 | bodyData[position++] << 24 | bodyData[position++] << 16 | bodyData[position++] << 8 | bodyData[position++]);
+                return ((long)bodyData[position++] << 56) | ((long)bodyData[position++] << 48) | ((long)bodyData[position++] << 40) | ((long)bodyData[position++] << 32) | ((long)bodyData[position++] << 24) | ((long)bodyData[position++] << 16) | ((long)bodyData[position++] << 8) | (long)bodyData[position++];
             }
             throw new IndexOutOfRangeException();
         }
@@ -396,7 +400,7 @@ namespace ProxyBase
         {
             if (position + 7 < bodyData.Length)
             {
-                return (ulong)(bodyData[position++] << 56 | bodyData[position++] << 48 | bodyData[position++] << 40 | bodyData[position++] << 32 | bodyData[position++] << 24 | bodyData[position++] << 16 | bodyData[position++] << 8 | bodyData[position++]);
+                return ((ulong)bodyData[position++] << 56) | ((ulong)bodyData[position++] << 48) | ((ulong)bodyData[position++] << 40) | ((ulong)bodyData[position++] << 32) | ((ulong)bodyData[position++] << 24) | ((ulong)bodyData[position++] << 16) | ((ulong)bodyData[position++] << 8) | (ulong)bodyData[position++];
             }
             throw new IndexOutOfRangeException();
         }
@@ -605,9 +609,8 @@ namespace ProxyBase
         {
             var length = bodyData.Length - 7;
 
-            var rand = new Random();
-            var bRand = (ushort)(rand.Next(65277) + 256);
-            var sRand = (byte)(rand.Next(155) + 100);
+            var bRand = (ushort)(rng.Next(65277) + 256);
+            var sRand = (byte)(rng.Next(155) + 100);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
 
@@ -665,9 +668,8 @@ namespace ProxyBase
             {
                 crc = (ushort)(bodyData[6 + i] ^ ((ushort)(crc << 8) ^ (ushort)dialogCrcTable[(crc >> 8)]));
             }
-            var rand = new Random();
-            bodyData[0] = (byte)rand.Next();
-            bodyData[1] = (byte)rand.Next();
+            bodyData[0] = (byte)rng.Next();
+            bodyData[1] = (byte)rng.Next();
             bodyData[2] = (byte)((bodyData.Length - 4) / 256);
             bodyData[3] = (byte)((bodyData.Length - 4) % 256);
             bodyData[4] = (byte)(crc / 256);
@@ -749,9 +751,8 @@ namespace ProxyBase
         {
             var length = bodyData.Length - 3;
 
-            var rand = new Random();
-            var bRand = (ushort)(rand.Next() % 65277 + 256);
-            var sRand = (byte)(rand.Next() % 155 + 100);
+            var bRand = (ushort)(rng.Next() % 65277 + 256);
+            var sRand = (byte)(rng.Next() % 155 + 100);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
 

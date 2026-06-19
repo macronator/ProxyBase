@@ -74,8 +74,9 @@ namespace ProxyBase
                         ServerProcess();
                         ServerDequeue();
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        System.Diagnostics.Debug.WriteLine(ex);
                         Connected = false;
                     }
                 }
@@ -220,8 +221,9 @@ namespace ProxyBase
             {
                 client.ClientSocket.EndSend(ar);
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 client.Connected = false;
             }
         }
@@ -233,8 +235,9 @@ namespace ProxyBase
             {
                 client.ServerSocket.EndSend(ar);
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 client.Connected = false;
             }
         }
@@ -286,8 +289,9 @@ namespace ProxyBase
 
                 client.clientReceiving = false;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 client.Connected = false;
             }
         }
@@ -333,8 +337,9 @@ namespace ProxyBase
 
                 client.serverReceiving = false;
             }
-            catch
+            catch (Exception ex)
             {
+                System.Diagnostics.Debug.WriteLine(ex);
                 client.Connected = false;
             }
         }

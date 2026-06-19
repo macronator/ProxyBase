@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -15,7 +16,21 @@ namespace ProxyBase
 
         private void MainForm_Load(object sender, EventArgs e)
         {
-            this.Server = new Server(this);
+            try
+            {
+                this.Server = new Server(this);
+            }
+            catch (System.Net.Sockets.SocketException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+                MessageBox.Show(
+                    "Could not listen on 127.0.0.1:" + Config.LocalListenPort +
+                    ".\r\n\r\nAnother program (another ProxyBase instance, or a bot such as " +
+                    "Ascend) is probably already using that port. Close it and start ProxyBase again.",
+                    "ProxyBase - port in use",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Environment.Exit(1);
+            }
         }
         private void MainForm_FormClosing(object sender, FormClosingEventArgs e)
         {
@@ -28,13 +43,15 @@ namespace ProxyBase
         }
         private void launchDarkAgesToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var path = Config.ClientPath;
+            var path = ResolveDarkAgesPath();
+            if (string.IsNullOrEmpty(path))
+                return; // no client selected
 
             ProcessInformation information;
             StartupInfo startupInfo = new StartupInfo();
             startupInfo.Size = Marshal.SizeOf(startupInfo);
             Kernel32.CreateProcess(path, null, IntPtr.Zero, IntPtr.Zero, false, ProcessCreationFlags.Suspended,
-                IntPtr.Zero, null, ref startupInfo, out information);
+                IntPtr.Zero, Path.GetDirectoryName(path), ref startupInfo, out information);
 
             using (ProcessMemoryStream stream = new ProcessMemoryStream(information.ProcessId,
                 ProcessAccess.VmWrite | ProcessAccess.VmRead | ProcessAccess.VmOperation))
@@ -62,6 +79,51 @@ namespace ProxyBase
 
                 Kernel32.ResumeThread(information.ThreadHandle);
             }
+        }
+
+        private void chooseDaPathToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            ShowDaPathDialog();
+        }
+
+        /// <summary>
+        /// Returns the Dark Ages client path to launch: the saved setting if present,
+        /// otherwise the Config.cs default, otherwise opens the Options dialog so the
+        /// user can set it.
+        /// </summary>
+        private string ResolveDarkAgesPath()
+        {
+            var path = Properties.Settings.Default.DarkAgesPath;
+            if (string.IsNullOrEmpty(path))
+                path = Config.ClientPath;
+
+            if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                path = ShowDaPathDialog();
+
+            return path;
+        }
+
+        /// <summary>
+        /// Shows the Options dialog (editable path + Browse), saves the chosen path,
+        /// and returns it — or null if the user cancelled.
+        /// </summary>
+        private string ShowDaPathDialog()
+        {
+            using (var options = new OptionsForm())
+            {
+                var current = Properties.Settings.Default.DarkAgesPath;
+                if (string.IsNullOrEmpty(current))
+                    current = Config.ClientPath;
+                options.DarkAgesPath = current;
+
+                if (options.ShowDialog(this) == DialogResult.OK)
+                {
+                    Properties.Settings.Default.DarkAgesPath = options.DarkAgesPath;
+                    Properties.Settings.Default.Save();
+                    return options.DarkAgesPath;
+                }
+            }
+            return null;
         }
 
         public void AddTab(ClientTab clientTab)
