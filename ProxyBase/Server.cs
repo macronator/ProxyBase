@@ -115,13 +115,33 @@ namespace ProxyBase
         }
         public bool ServerMessage_0x03_Redirect(Client client, ServerPacket msg)
         {
+            // 0x03 is polymorphic (the RE shows 2 states). The server-transfer form we
+            // care about carries Address(ipv4) + Port at the very start of the body; the
+            // proxy rewrites those to its loopback so the client follows it to the next
+            // server. Guard against a shorter / other variant so it can't read out of
+            // range and drop the relay.
+            if (msg.BodyData.Length < 6)
+                return true; // no address+port to rewrite -- forward untouched
+
             var address = msg.Read(4);
             var port = msg.ReadUInt16();
-            var length = msg.ReadByte();
-            var seed = msg.ReadByte();
-            var key = msg.Read(msg.ReadByte());
-            var name = msg.ReadString8();
-            var id = msg.ReadUInt32();
+
+            try
+            {
+                // Trailing fields (RE: Seed:u8, keyLength:u8, PrivateKey[keyLength],
+                // Name:string8, ConnectionId:u32). Not needed here -- the redirected
+                // connection re-keys via the 0x10 ClientJoin handler -- but parse them so
+                // a malformed tail is caught instead of dropping the connection.
+                var length = msg.ReadByte();
+                var seed = msg.ReadByte();
+                var key = msg.Read(msg.ReadByte());
+                var name = msg.ReadString8();
+                var id = msg.ReadUInt32();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
 
             Array.Reverse(address);
             RemoteEndPoint = new IPEndPoint(new IPAddress(address), port);
