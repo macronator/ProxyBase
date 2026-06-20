@@ -618,7 +618,11 @@ namespace ProxyBase
         {
             get
             {
-                return Opcode != 0x00 && Opcode != 0x0B && Opcode != 0x10 && Opcode != 0x57 && Opcode != 0x62;
+                // Raw (no seq/crypt) C2S opcodes, from the binary RE: version (0x00),
+                // encryption-key request (0x10), and 0x48. Everything else is encrypted
+                // (static or dynamic key -- see UseDefaultKey). 0x0B/0x57/0x62 are
+                // static-key encrypted, not raw, so the proxy can now read them.
+                return Opcode != 0x00 && Opcode != 0x10 && Opcode != 0x48;
             }
         }
         public override bool UseDefaultKey
@@ -764,7 +768,12 @@ namespace ProxyBase
         {
             get
             {
-                return Opcode != 0x00 && Opcode != 0x03 && Opcode != 0x6F && Opcode != 0x7E;
+                // Raw (no decrypt) S2C opcodes, from the binary RE: 0x00, redirect (0x03),
+                // and 0x40. 0x6F is static-key encrypted, not raw (now readable). 0x7E is
+                // the pre-key encryption-setup packet -- the proxy can't derive its dynamic
+                // key before the login seed is known, so it is passed through verbatim
+                // (the client still decrypts it).
+                return Opcode != 0x00 && Opcode != 0x03 && Opcode != 0x40 && Opcode != 0x7E;
             }
         }
         public override bool UseDefaultKey
