@@ -4,6 +4,23 @@ using System.Text;
 
 namespace ProxyBase
 {
+    /// <summary>
+    /// A single Dark Ages packet. The wire frame is
+    /// <c>0xAA | length(u16 big-endian) | body</c>, where <c>body[0]</c> is the opcode
+    /// and (for encrypted opcodes) <c>body[1]</c> is the ordinal/sequence byte.
+    ///
+    /// Each opcode uses one of three schemes, selected by <see cref="ShouldEncrypt"/>
+    /// and <see cref="UseDefaultKey"/> (the per-opcode sets are taken from the client RE):
+    ///   - raw         : no encryption (handshake / server-transfer opcodes);
+    ///   - static key  : XOR cipher keyed by the constant "UrkcnItnI";
+    ///   - dynamic key : XOR cipher keyed per-packet from the session key table.
+    ///
+    /// Cipher (both keys): for each byte i, <c>b[i] ^= salt[(i/9)%256] ^ key[i%9]</c>,
+    /// and additionally <c>^= salt[ordinal]</c> when <c>(i/9)%256 != ordinal</c>.
+    /// Client-&gt;server packets append a 4-byte MD5 integrity tag; both directions end
+    /// with a 3-byte obfuscated copy of the per-packet random key. Verified against the
+    /// reverse-engineered Darkages.exe crypto.
+    /// </summary>
     public abstract class Packet
     {
         // Single shared RNG. Using `new Random()` per call seeds from the system clock,
@@ -251,6 +268,16 @@ namespace ProxyBase
 			0x6E17, 0x7E36, 0x4E55, 0x5E74, 0x2E93, 0x3EB2, 0x0ED1, 0x1EF0
         };
         #endregion
+
+        /// <summary>
+        /// Returns the 256-byte salt/permutation table for <paramref name="seed"/>.
+        /// The protocol only defines seeds 0x00-0x09; an out-of-range seed falls back to
+        /// table 0 rather than throwing, so a malformed handshake can't crash the relay.
+        /// </summary>
+        protected static byte[] SaltFor(int seed)
+        {
+            return (uint)seed < (uint)saltTable.Length ? saltTable[seed] : saltTable[0];
+        }
 
         private int position;
 
@@ -613,14 +640,15 @@ namespace ProxyBase
             var sRand = (byte)(rng.Next(155) + 100);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
+            var salt = SaltFor(client.Seed);
 
             for (var i = 0; i < length; i++)
             {
                 bodyData[i] ^= key[i % key.Length];
-                bodyData[i] ^= saltTable[client.Seed][(i / key.Length) % saltTable[client.Seed].Length];
-                if ((i / key.Length) % saltTable[client.Seed].Length != ordinal)
+                bodyData[i] ^= salt[(i / key.Length) % salt.Length];
+                if ((i / key.Length) % salt.Length != ordinal)
                 {
-                    bodyData[i] ^= saltTable[client.Seed][ordinal];
+                    bodyData[i] ^= salt[ordinal];
                 }
             }
 
@@ -649,14 +677,15 @@ namespace ProxyBase
             var sRand = (byte)(bodyData[length + 5] ^ 0x23);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
+            var salt = SaltFor(client.Seed);
 
             for (var i = 0; i < length; i++)
             {
                 bodyData[i] ^= key[i % key.Length];
-                bodyData[i] ^= saltTable[client.Seed][(i / key.Length) % saltTable[client.Seed].Length];
-                if ((i / key.Length) % saltTable[client.Seed].Length != ordinal)
+                bodyData[i] ^= salt[(i / key.Length) % salt.Length];
+                if ((i / key.Length) % salt.Length != ordinal)
                 {
-                    bodyData[i] ^= saltTable[client.Seed][ordinal];
+                    bodyData[i] ^= salt[ordinal];
                 }
             }
         }
@@ -755,14 +784,15 @@ namespace ProxyBase
             var sRand = (byte)(rng.Next() % 155 + 100);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
+            var salt = SaltFor(client.Seed);
 
             for (var i = 0; i < length; i++)
             {
                 bodyData[i] ^= key[i % key.Length];
-                bodyData[i] ^= saltTable[client.Seed][(i / key.Length) % saltTable[client.Seed].Length];
-                if ((i / key.Length) % saltTable[client.Seed].Length != ordinal)
+                bodyData[i] ^= salt[(i / key.Length) % salt.Length];
+                if ((i / key.Length) % salt.Length != ordinal)
                 {
-                    bodyData[i] ^= saltTable[client.Seed][ordinal];
+                    bodyData[i] ^= salt[ordinal];
                 }
             }
 
@@ -778,14 +808,15 @@ namespace ProxyBase
             var sRand = (byte)(bodyData[length + 1] ^ 0x24);
 
             var key = (UseDefaultKey) ? client.Key : client.GenerateKey(bRand, sRand);
+            var salt = SaltFor(client.Seed);
 
             for (var i = 0; i < length; i++)
             {
                 bodyData[i] ^= key[i % key.Length];
-                bodyData[i] ^= saltTable[client.Seed][(i / key.Length) % saltTable[client.Seed].Length];
-                if ((i / key.Length) % saltTable[client.Seed].Length != ordinal)
+                bodyData[i] ^= salt[(i / key.Length) % salt.Length];
+                if ((i / key.Length) % salt.Length != ordinal)
                 {
-                    bodyData[i] ^= saltTable[client.Seed][ordinal];
+                    bodyData[i] ^= salt[ordinal];
                 }
             }
         }

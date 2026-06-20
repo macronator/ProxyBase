@@ -43,9 +43,16 @@ namespace ProxyBase
                 ServerMessageHandlers[i] = (client, msg) => { return true; };
             }
 
-            ClientMessageHandlers[0x10] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
-            ServerMessageHandlers[0x03] = new ServerMessageHandler(ServerMessage_0x03_Redirect);
-            ServerMessageHandlers[0x05] = new ServerMessageHandler(ServerMessage_0x05_PlayerID);
+            ClientMessageHandlers[(byte)ClientOpcode.EncryptionKey] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
+            ServerMessageHandlers[(byte)ServerOpcode.Redirect] = new ServerMessageHandler(ServerMessage_0x03_Redirect);
+            ServerMessageHandlers[(byte)ServerOpcode.PlayerId] = new ServerMessageHandler(ServerMessage_0x05_PlayerID);
+
+            // Example handlers (safe to delete) -- parse a packet per its reverse-engineered
+            // wire layout, log the decoded fields, then forward it unchanged. They show the
+            // pattern for writing your own. 0x0A is static-key (always decodes); 0x0C is
+            // dynamic-key (decodes once the in-game key is set after the 0x10 handshake).
+            ServerMessageHandlers[(byte)ServerOpcode.SystemMessage] = new ServerMessageHandler(ServerMessage_0x0A_SystemMessage);
+            ServerMessageHandlers[(byte)ServerOpcode.CreatureWalk] = new ServerMessageHandler(ServerMessage_0x0C_CreatureWalk);
 
             this.RemoteEndPoint = new IPEndPoint(IPAddress.Parse(Config.RemoteServerIp), Config.RemoteServerPort);
 
@@ -132,6 +139,53 @@ namespace ProxyBase
         public bool ServerMessage_0x05_PlayerID(Client client, ServerPacket msg)
         {
             Form.AddTab(client.Tab);
+            return true;
+        }
+
+        /// <summary>
+        /// Example handler (S2C <see cref="ServerOpcode.SystemMessage"/>, 0x0A): a server
+        /// or system message. Wire layout from the protocol RE:
+        /// <c>type:u8, length:u16(BE), text[length]</c>. This is a static-key packet, so it
+        /// always decodes. Read-only -- it logs the decoded text and forwards the packet
+        /// unchanged. Wrapped defensively so a malformed packet can never drop the relay.
+        /// </summary>
+        public bool ServerMessage_0x0A_SystemMessage(Client client, ServerPacket msg)
+        {
+            try
+            {
+                var type = msg.ReadByte();
+                var length = msg.ReadUInt16();
+                var text = msg.ReadString(length);
+                client.Tab.LogIncomingPacket("  [SystemMessage type={0}] {1}", type, text);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// Example handler (S2C <see cref="ServerOpcode.CreatureWalk"/>, 0x0C): another
+        /// creature or player taking a step. Wire layout from the protocol RE:
+        /// <c>id:u32, x:u16, y:u16, direction:u8</c>. This is a dynamic-key packet, so it
+        /// only decodes once the in-game key has been established (after the 0x10
+        /// handshake). Read-only; forwards the packet unchanged.
+        /// </summary>
+        public bool ServerMessage_0x0C_CreatureWalk(Client client, ServerPacket msg)
+        {
+            try
+            {
+                var id = msg.ReadUInt32();
+                var x = msg.ReadUInt16();
+                var y = msg.ReadUInt16();
+                var direction = msg.ReadByte();
+                client.Tab.LogIncomingPacket("  [CreatureWalk] id={0} ({1},{2}) dir={3}", id, x, y, direction);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex);
+            }
             return true;
         }
     }
