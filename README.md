@@ -23,7 +23,8 @@ It is meant as a **starting point (a "base")** for building your own tools — p
 ## Features
 
 - Transparent client ↔ server packet relay over loopback
-- Full implementation of the Dark Ages packet encryption (key/salt tables, ordinal-based XOR, MD5 integrity bytes) and the dialog CRC/encryption
+- Full implementation of the Dark Ages packet encryption (key/salt tables, ordinal-based XOR, MD5 integrity bytes) and the dialog CRC/encryption — cross-checked against the reverse-engineered client
+- Named `ClientOpcode` / `ServerOpcode` enums (`Opcodes.cs`) recovered from the protocol, so handlers read by name instead of magic numbers
 - Per-connection UI tab with live incoming/outgoing packet logs
 - Simple `opcode → handler` registration model for inspecting or rewriting packets
 - In-memory client patching via Win32 P/Invoke (`kernel32`)
@@ -69,22 +70,22 @@ All tweakable settings live in one file: **`ProxyBase/Config.cs`**. This base wa
 Handlers are registered per opcode in `Server.cs`. Each returns `true` to forward the packet or `false` to drop it. Examples already in the base:
 
 ```csharp
-// In the Server constructor:
-ClientMessageHandlers[0x10] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
-ServerMessageHandlers[0x03] = new ServerMessageHandler(ServerMessage_0x03_Redirect);
+// In the Server constructor (opcodes are named in Opcodes.cs):
+ClientMessageHandlers[(byte)ClientOpcode.EncryptionKey] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
+ServerMessageHandlers[(byte)ServerOpcode.Redirect]      = new ServerMessageHandler(ServerMessage_0x03_Redirect);
 
 // A handler:
-public bool ClientMessage_0x10_ClientJoin(Client client, ClientPacket msg)
+public bool ServerMessage_0x0A_SystemMessage(Client client, ServerPacket msg)
 {
-    var seed = msg.ReadByte();
-    var key  = msg.Read(msg.ReadByte());
-    var name = msg.ReadString8();
+    var type   = msg.ReadByte();         // wire layout from the protocol RE:
+    var length = msg.ReadUInt16();       //   type:u8, length:u16(BE), text[length]
+    var text   = msg.ReadString(length);
     // ... inspect or modify the packet ...
     return true; // return false to drop it instead of forwarding
 }
 ```
 
-Use the `Packet` reader/writer helpers (`ReadByte`, `ReadString8`, `ReadUInt32`, `WriteString8`, …) to parse and build packet bodies.
+Use the `Packet` reader/writer helpers (`ReadByte`, `ReadString8`, `ReadUInt32`, `WriteString8`, …) to parse and build packet bodies. `Server.cs` ships two read-only example handlers (`ServerMessage_0x0A_SystemMessage`, `ServerMessage_0x0C_CreatureWalk`) that decode a packet per its reverse-engineered layout and log the fields — delete them or use them as templates.
 
 ## Project structure
 
@@ -96,6 +97,7 @@ Use the `Packet` reader/writer helpers (`ReadByte`, `ReadString8`, `ReadUInt32`,
 | `Server.cs` | Listens for the client, spawns `Client` relays, registers packet handlers. |
 | `Client.cs` | One client ↔ server relay: async receive/send loops, queues, key generation. |
 | `Packet.cs` | `Packet` base + `ClientPacket` / `ServerPacket`: framing, encryption, dialog crypto, salt & CRC tables. |
+| `Opcodes.cs` | `ClientOpcode` / `ServerOpcode` enums: named packet opcodes recovered from the protocol. |
 | `ClientTab.cs` | Per-connection UI tab with packet logging and manual send/recv. |
 | `ProcessMemoryStream.cs` | A `Stream` over another process's memory (used for client patching). |
 | `Kernel32.cs` | Win32 P/Invoke declarations. |
