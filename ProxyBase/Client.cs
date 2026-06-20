@@ -29,8 +29,12 @@ namespace ProxyBase
         private byte[] clientBuffer = new byte[65535];
         private byte[] serverBuffer = new byte[65535];
 
-        private List<byte> fullClientBuffer = new List<byte>();
-        private List<byte> fullServerBuffer = new List<byte>();
+        // Receive reassembly buffers. Offset/length framing (compacted once per receive)
+        // instead of List<byte> + RemoveRange, so draining N packets is O(n), not O(n^2).
+        private byte[] clientAccum = new byte[65535];
+        private int clientAccumLength = 0;
+        private byte[] serverAccum = new byte[65535];
+        private int serverAccumLength = 0;
 
         private byte clientOrdinal = 0x00;
         private byte serverOrdinal = 0x00;
@@ -48,6 +52,11 @@ namespace ProxyBase
             this.ServerSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
             this.ServerSocket.Connect(endPoint);
             this.Tab = new ClientTab(this);
+
+            // Roomier kernel receive buffers so a burst (busy area, GM event) doesn't
+            // outrun the reassembly path.
+            this.ClientSocket.ReceiveBufferSize = 1 << 19;
+            this.ServerSocket.ReceiveBufferSize = 1 << 19;
 
             this.Key = Encoding.ASCII.GetBytes("UrkcnItnI");
             this.KeyTable = new byte[1024];
@@ -250,43 +259,61 @@ namespace ProxyBase
             try
             {
                 var count = client.ClientSocket.EndReceive(ar);
-
-                for (int i = 0; i < count; i++)
-                    client.fullClientBuffer.Add(client.clientBuffer[i]);
-
-                if (count == 0 || client.fullClientBuffer[0] != 0xAA)
+                if (count == 0)
                 {
-                    client.Connected = false;
+                    client.Connected = false; // peer closed the connection
                     return;
                 }
 
-                while (client.fullClientBuffer.Count > 3)
+                AppendBytes(ref client.clientAccum, ref client.clientAccumLength, client.clientBuffer, count);
+
+                int start = 0;
+                int length = client.clientAccumLength;
+                while (length - start >= 3)
                 {
-                    var length = ((client.fullClientBuffer[1] << 8) + client.fullClientBuffer[2] + 3);
-
-                    if (length > client.fullClientBuffer.Count)
-                        break;
-
-                    var data = client.fullClientBuffer.GetRange(0, length);
-                    client.fullClientBuffer.RemoveRange(0, length);
-
-                    var msg = new ClientPacket(data.ToArray());
-
-                    if (msg.ShouldEncrypt)
+                    if (client.clientAccum[start] != 0xAA)
                     {
-                        msg.Decrypt(client);
+                        // Desync: skip to the next signature byte instead of dropping the
+                        // whole connection -- one stray byte shouldn't end the relay.
+                        System.Diagnostics.Debug.WriteLine("[client] resync: skipping unframed byte(s)");
+                        int sig = IndexOfSignature(client.clientAccum, start + 1, length);
+                        if (sig < 0) { start = length; break; }
+                        start = sig;
+                        continue;
                     }
 
-                    if (msg.Opcode == 0x39 || msg.Opcode == 0x3A)
-                    {
-                        msg.DecryptDialog();
-                    }
+                    int frameLength = ((client.clientAccum[start + 1] << 8) | client.clientAccum[start + 2]) + 3;
+                    if (length - start < frameLength)
+                        break; // partial frame; wait for the rest
 
-                    lock (Program.SyncObj)
+                    var data = new byte[frameLength];
+                    Buffer.BlockCopy(client.clientAccum, start, data, 0, frameLength);
+                    start += frameLength;
+
+                    try
                     {
-                        client.clientProcessQueue.Enqueue(msg);
+                        var msg = new ClientPacket(data);
+
+                        if (msg.ShouldEncrypt)
+                            msg.Decrypt(client);
+
+                        if (msg.Opcode == 0x39 || msg.Opcode == 0x3A)
+                            msg.DecryptDialog();
+
+                        lock (Program.SyncObj)
+                            client.clientProcessQueue.Enqueue(msg);
+                    }
+                    catch (Exception ex)
+                    {
+                        // A single malformed packet is logged and skipped, not fatal.
+                        System.Diagnostics.Debug.WriteLine(ex);
                     }
                 }
+
+                // Keep any leftover (partial frame) bytes for the next receive.
+                client.clientAccumLength = length - start;
+                if (start > 0 && client.clientAccumLength > 0)
+                    Array.Copy(client.clientAccum, start, client.clientAccum, 0, client.clientAccumLength);
 
                 client.clientReceiving = false;
             }
@@ -303,38 +330,54 @@ namespace ProxyBase
             try
             {
                 var count = client.ServerSocket.EndReceive(ar);
-
-                for (int i = 0; i < count; i++)
-                    client.fullServerBuffer.Add(client.serverBuffer[i]);
-
-                if (count == 0 || client.fullServerBuffer[0] != 0xAA)
+                if (count == 0)
                 {
-                    client.Connected = false;
+                    client.Connected = false; // peer closed the connection
                     return;
                 }
 
-                while (client.fullServerBuffer.Count > 3)
+                AppendBytes(ref client.serverAccum, ref client.serverAccumLength, client.serverBuffer, count);
+
+                int start = 0;
+                int length = client.serverAccumLength;
+                while (length - start >= 3)
                 {
-                    var length = ((client.fullServerBuffer[1] << 8) + client.fullServerBuffer[2] + 3);
-
-                    if (length > client.fullServerBuffer.Count)
-                        break;
-
-                    var data = client.fullServerBuffer.GetRange(0, length);
-                    client.fullServerBuffer.RemoveRange(0, length);
-
-                    var msg = new ServerPacket(data.ToArray());
-
-                    if (msg.ShouldEncrypt)
+                    if (client.serverAccum[start] != 0xAA)
                     {
-                        msg.Decrypt(client);
+                        System.Diagnostics.Debug.WriteLine("[server] resync: skipping unframed byte(s)");
+                        int sig = IndexOfSignature(client.serverAccum, start + 1, length);
+                        if (sig < 0) { start = length; break; }
+                        start = sig;
+                        continue;
                     }
 
-                    lock (Program.SyncObj)
+                    int frameLength = ((client.serverAccum[start + 1] << 8) | client.serverAccum[start + 2]) + 3;
+                    if (length - start < frameLength)
+                        break; // partial frame; wait for the rest
+
+                    var data = new byte[frameLength];
+                    Buffer.BlockCopy(client.serverAccum, start, data, 0, frameLength);
+                    start += frameLength;
+
+                    try
                     {
-                        client.serverProcessQueue.Enqueue(msg);
+                        var msg = new ServerPacket(data);
+
+                        if (msg.ShouldEncrypt)
+                            msg.Decrypt(client);
+
+                        lock (Program.SyncObj)
+                            client.serverProcessQueue.Enqueue(msg);
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine(ex);
                     }
                 }
+
+                client.serverAccumLength = length - start;
+                if (start > 0 && client.serverAccumLength > 0)
+                    Array.Copy(client.serverAccum, start, client.serverAccum, 0, client.serverAccumLength);
 
                 client.serverReceiving = false;
             }
@@ -356,6 +399,25 @@ namespace ProxyBase
             }
 
             return key;
+        }
+
+        // Appends `count` bytes from `source` onto the reassembly buffer, growing it if
+        // needed. Buffer and its length are passed by ref so the field is updated in place.
+        private static void AppendBytes(ref byte[] buffer, ref int length, byte[] source, int count)
+        {
+            if (length + count > buffer.Length)
+                Array.Resize(ref buffer, Math.Max(buffer.Length * 2, length + count));
+            Buffer.BlockCopy(source, 0, buffer, length, count);
+            length += count;
+        }
+
+        // Index of the next 0xAA frame-signature byte at or after `start`, or -1.
+        private static int IndexOfSignature(byte[] buffer, int start, int length)
+        {
+            for (int i = start; i < length; i++)
+                if (buffer[i] == 0xAA)
+                    return i;
+            return -1;
         }
     }
 }
