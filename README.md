@@ -71,7 +71,7 @@ Handlers are registered per opcode in `Server.cs`. Each returns `true` to forwar
 
 ```csharp
 // In the Server constructor (opcodes are named in Opcodes.cs):
-ClientMessageHandlers[(byte)ClientOpcode.EncryptionKey] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
+ClientMessageHandlers[(byte)ClientOpcode.ClientJoin] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
 ServerMessageHandlers[(byte)ServerOpcode.Redirect]      = new ServerMessageHandler(ServerMessage_0x03_Redirect);
 
 // A handler:

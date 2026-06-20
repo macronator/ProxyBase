@@ -43,7 +43,7 @@ namespace ProxyBase
                 ServerMessageHandlers[i] = (client, msg) => { return true; };
             }
 
-            ClientMessageHandlers[(byte)ClientOpcode.EncryptionKey] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
+            ClientMessageHandlers[(byte)ClientOpcode.ClientJoin] = new ClientMessageHandler(ClientMessage_0x10_ClientJoin);
             ServerMessageHandlers[(byte)ServerOpcode.Redirect] = new ServerMessageHandler(ServerMessage_0x03_Redirect);
             ServerMessageHandlers[(byte)ServerOpcode.PlayerId] = new ServerMessageHandler(ServerMessage_0x05_PlayerID);
 
