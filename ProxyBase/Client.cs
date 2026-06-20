@@ -13,7 +13,8 @@ namespace ProxyBase
         public byte[] Key { get; set; }
         public byte[] KeyTable { get; set; }
 
-        public bool Connected { get; private set; }
+        private volatile bool connected;
+        public bool Connected { get { return connected; } private set { connected = value; } }
         public Server Server { get; private set; }
 
         public ClientTab Tab { get; private set; }
@@ -23,8 +24,8 @@ namespace ProxyBase
         public Socket ClientSocket { get; private set; }
         public Socket ServerSocket { get; private set; }
 
-        private bool clientReceiving = false;
-        private bool serverReceiving = false;
+        private volatile bool clientReceiving = false;
+        private volatile bool serverReceiving = false;
 
         private byte[] clientBuffer = new byte[65535];
         private byte[] serverBuffer = new byte[65535];
@@ -35,6 +36,11 @@ namespace ProxyBase
         private int clientAccumLength = 0;
         private byte[] serverAccum = new byte[65535];
         private int serverAccumLength = 0;
+
+        // Safety cap on the reassembly buffer. The largest legal frame is 65538 bytes
+        // (0xAA + u16 length + body), so a leftover beyond this means the stream is
+        // garbage or hostile -- drop the connection rather than buffer forever.
+        private const int MaxReassemblyBuffer = 1 << 17; // 128 KB
 
         private byte clientOrdinal = 0x00;
         private byte serverOrdinal = 0x00;
@@ -315,6 +321,13 @@ namespace ProxyBase
                 if (start > 0 && client.clientAccumLength > 0)
                     Array.Copy(client.clientAccum, start, client.clientAccum, 0, client.clientAccumLength);
 
+                if (client.clientAccumLength > MaxReassemblyBuffer)
+                {
+                    System.Diagnostics.Debug.WriteLine("[client] reassembly buffer exceeded cap; disconnecting");
+                    client.Connected = false;
+                    return;
+                }
+
                 client.clientReceiving = false;
             }
             catch (Exception ex)
@@ -378,6 +391,13 @@ namespace ProxyBase
                 client.serverAccumLength = length - start;
                 if (start > 0 && client.serverAccumLength > 0)
                     Array.Copy(client.serverAccum, start, client.serverAccum, 0, client.serverAccumLength);
+
+                if (client.serverAccumLength > MaxReassemblyBuffer)
+                {
+                    System.Diagnostics.Debug.WriteLine("[server] reassembly buffer exceeded cap; disconnecting");
+                    client.Connected = false;
+                    return;
+                }
 
                 client.serverReceiving = false;
             }
