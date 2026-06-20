@@ -87,6 +87,8 @@ public bool ServerMessage_0x0A_SystemMessage(Client client, ServerPacket msg)
 
 Use the `Packet` reader/writer helpers (`ReadByte`, `ReadString8`, `ReadUInt32`, `WriteString8`, …) to parse and build packet bodies. `Server.cs` ships two read-only example handlers (`ServerMessage_0x0A_SystemMessage`, `ServerMessage_0x0C_CreatureWalk`) that decode a packet per its reverse-engineered layout and log the fields — delete them or use them as templates.
 
+See **[PROTOCOL.md](PROTOCOL.md)** for the full opcode tables (names + encryption class), the encryption scheme, and the verified wire layouts.
+
 ## Project structure
 
 | File | Purpose |
